@@ -15,7 +15,7 @@ Optimized for Arduino Nano (ATMega328P) platform
 
 // Function Prototypes
 void fncSetup (void);
-float fncConvertScale(volatile unsigned char *, unsigned char);
+long fncConvertScale(volatile unsigned char *, unsigned char);
 void fncSerialHandle();
 void fncFastMode();
 void fncZeroScale();
@@ -36,9 +36,9 @@ volatile unsigned char ucBitCount1=0, ucConvFlag1=0, ucBufWndw1=0, ucBufRun1=0, 
 // meant for only one bit but set to whole byte for better performance
 volatile unsigned char ucRawValue1[24];
 
-// scale value as union (float and byte)
+// scale value as union (long and byte)
 typedef union {
-	float flt;
+	long lVal;
 	unsigned char chrs[4];
 } ufScaleValue1_t;
 ufScaleValue1_t  ufScaleValue1;
@@ -63,16 +63,16 @@ int main(void)
 
 		if(ucConvFlag1) // data conversion could be done
 		{
-			float fTempScaleValue = fncConvertScale(ucRawValue1, DATA_PIN); // convert data to mm, store temporarily
-			ufScaleValue1.flt = fTempScaleValue; // atomically copy 4 bytes of data to union
+			long lTempScaleValue = fncConvertScale(ucRawValue1, DATA_PIN); // convert data to mm, store temporarily
+			ufScaleValue1.lVal = lTempScaleValue; // copy 4 bytes of data to union
 			ucConvFlag1=0; // reset conversion flag, start new caliper reading
 		}
 		
 		if(ucTimerFlag1) // cyclic timer has triggered
 		{
-			// serially send out float value from union, 4 bytes one by one, LSB first
+			uart_putc(0xAA); // Signal Start by sending b10101010 (170 Decimal)
+			// serially send out long value from union, 4 bytes one by one, LSB first
 			for (unsigned char ucTemp = 0; ucTemp < 4; ucTemp++) uart_putc(ufScaleValue1.chrs[ucTemp]);
-			uart_putc('\0'); // finish by sending a zero byte
 			ucTimerFlag1=0; // reset timer flag
 		}
 		
@@ -151,17 +151,16 @@ void fncSetup (void)
 	sei();
 }
 
-// convert collected bits in array ucRawValue to millimeters as float with 100's mm
-float fncConvertScale(volatile unsigned char *ucRawValue, unsigned char ucPin)
+// convert collected bits in array ucRawValue to millimeters as long with 100's mm
+long fncConvertScale(volatile unsigned char *ucRawValue, unsigned char ucPin)
 {
 	unsigned char ucTemp=0;
-	signed long slScaleValue=0;
-	float fScaleValue=0;
+	long lScaleValue=0;
 	
 	// Iterate though 24bit of ucRawValue, use pin value (ucPin) to select bit out of the byte
 	// pick only the interesting bit of the data-PIN (left-/right-shift by pin value)
 	// Shift left for later correct complements conversion
-	for(ucTemp=0; ucTemp<24; ucTemp++) slScaleValue |= ((int32_t)((((ucRawValue[ucTemp])&(1<<ucPin))>>ucPin))<<(ucTemp+8));
+	for(ucTemp=0; ucTemp<24; ucTemp++) lScaleValue |= ((int32_t)((((ucRawValue[ucTemp])&(1<<ucPin))>>ucPin))<<(ucTemp+8));
 
 	// see https://www.shumatech.com/support/chinese_scales.htm for protocol description - excerpt:
 	// The Chinese scales do not handshake the data output.
@@ -176,11 +175,10 @@ float fncConvertScale(volatile unsigned char *ucRawValue, unsigned char ucPin)
 	// with an origin that is reset with every press of the zero button on the scale.
 	// The positions are signed values so negative values are expressed in two's complement notation.
 
-	slScaleValue = (slScaleValue>>8); // Shift 8 bits right for complements conversion
-	fScaleValue = (float)((slScaleValue * 1270) / 10240); // convert from inch to mm * 100
-	fScaleValue = (fScaleValue / 100); // convert to 100rds mm (0,01mm)
+	lScaleValue = (lScaleValue>>8); // Shift 8 bits right for complements conversion
+	lScaleValue = ((lScaleValue * 1270) / 10240); // convert from inch to mm * 100
 
-	return fScaleValue;
+	return lScaleValue;
 }
 
 // Switch between fast and slow mode

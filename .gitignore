@@ -30,3 +30,7 @@
 *.exe
 *.out
 *.app
+
+# Debug Dir
+Messchieber-Nano/Debug
+.vs/Messchieber-Nano/v14/.atsuo
